@@ -1,0 +1,114 @@
+---
+title: "Analysis03"
+author: "Peter Krawiec (pwk2)"
+date: "November 17, 2019"
+output: html_document
+---
+
+```{r, load-packages, include = FALSE}
+library(rsample)
+library(caret)
+library(MASS)
+library(SDMTools)
+library(tidyverse)
+library(e1071)
+library(kableExtra)
+library(gbm)
+library(ROSE)
+```
+
+# Abstract
+Credit card fraud often causes people much headaches, time lost, and money lost. Being able to predict that a credit card purchase is fraudulent could lighten this heavily. In this analysis, attempts are made to predict a fraudulent purchase on a credit card using statistical methods.
+
+
+# Introduction
+Credit card fraud is a surprisingly common problem, it's not uncommon to become a victim of this at some point or knowing someone who is. Although today it is common practice to have fraudulent purchases refunded to the cardholder, it still causes headaches, needing the burden of proof to get a refund, and also successful fraudulent purchases incentives more to do them. If a fraudulent purchases can be predicted well, this could help eliminate or alleviate these problems.
+
+# Methods
+In this analysis the data is split into a testing and training set, where the training set is further split into an estimation set and validation set. Three models are fit to the estimation data and tested against the validation data. The best model is further trained on the training data and tested on the testing data. The models use Class as a response, that being whether the purchase is fraudulent or not, and everything but time as the predictor. The first model fit is a Random Forest model, cross-validated over 5 levels. The second model is a KNN model cross-validated over 5 levels. The third model is a GBM model cross-validated over 5 levels. The models are then compared on the balanced-accuracy on predicting the validation set. 
+
+
+
+```{r setup, echo=FALSE, message = FALSE, warning=FALSE}
+# Get data
+set.seed(1)
+data = read_csv(file = "https://fall-2019.stat432.org/analyses/data/cc-sub.csv")
+data$Class = factor(data$Class)
+data = data[sample(nrow(data), nrow(data)/2), ]
+
+# Split data
+# test/traing split
+cc_tst_trn = initial_split(data, prop = 0.50)
+cc_trn = training(cc_tst_trn)
+cc_tst = testing(cc_tst_trn)
+
+# est/val split
+cc_est_val = initial_split(cc_trn, prop = 0.50)
+cc_est = training(cc_est_val)
+cc_val = testing(cc_est_val)
+
+# Storage vector
+acc = numeric(3)
+
+# Random Forest Model
+rf_model= caret::train(Class ~ . - Time,
+                       data = cc_est,
+                       method = "rf",
+                       trControl = trainControl(method = "cv", number = 5))
+acc[1] = caret::confusionMatrix(data = cc_val$Class,
+                                reference = predict(rf_model, cc_val))$byClass[11]
+
+# SVM Model
+svm_model = train(Class ~ . - Time, 
+                data = cc_est,
+                method = "knn",
+                trControl = trainControl(method = 'cv', number = 5))
+acc[2] = caret::confusionMatrix(data = cc_val$Class,
+                                reference = predict(svm_model, cc_val))$byClass[11]
+
+# GBM Model
+gbm_model = caret::train(Class ~ . - Time,
+                     data = cc_est,
+                     method = "gbm",
+                     trControl = trainControl(method = "cv", 
+                     number = 5, sampling = "rose", 
+                     classProbs = TRUE),
+                     verbose = FALSE)
+acc[3] = caret::confusionMatrix(data = cc_val$Class,
+                                reference = predict(gbm_model, cc_val))$byClass[11]
+
+# Table of Results
+table = tibble("Models" = c("Random Forest", "KNN", "GBM"),
+                       "Balanced-Accuracies" = acc)
+display = kable(table, format = "html") 
+kable_styling(display, bootstrap_options = "striped", full_width = FALSE)
+
+# Final Model Testing
+rf_model= caret::train(Class ~ . - Time,
+                       data = cc_trn,
+                       method = "rf",
+                       trControl = trainControl(method = "cv", number = 5))
+acc_final = caret::confusionMatrix(data = cc_tst$Class,
+                                reference = predict(rf_model, cc_tst))$byClass[11]
+```
+
+
+
+# Results
+In the table one can see that the Random Forest and KNN models get very high balanced accuracies. Due to the very low number of positive cases (cases of fraud) though, this figure can still be misleading, the actual accuracies of correctly predicting could differ quite greatly from this output. Random Forest still looks to be the most promising, further training on the training set and testing on the testing set gives a balanced accuracy of 0.8747595. Upon investigation of the data and number of cases for classification, there are much more positive cases than earlier validation. This balanced accuracy is fairly high and looks more promising given the quality of the data. 
+
+
+
+# Discussion
+Not many conclusions can be confidently made about the prediction of credit card fraud from this analysis given the quality of the data used. More specifically, on the training and testing, the number of positive cases (fraud) for classification are very small relative to negative cases. Balanced accuracy was used to try to account for this, however no change in lens can compete with more cases to test on. Further analysis should be done, one place to start would be with using the entire data set, for this analysis only half of the data set was used due to limitations of computational power. Furthermore, more models should be explored for analysis, where this analysis only saw three different models. Even with all the issues present in this analysis, the results from them are still promising meaning that further analysis will likely lead to good results.
+
+
+### Data
+Data set: https://fall-2019.stat432.org/analyses/data/cc-sub.csv
+
+Data Dictionary:
+
+Time - Number of seconds elapsed between this transaction and the first transaction in the data set
+V1-28 - may be result of a PCA Dimensionality reduction to protect user identities and sensitive features(v1-v28)
+
+
